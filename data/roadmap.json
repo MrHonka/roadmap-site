@@ -1,0 +1,96 @@
+{
+  "sprints": [
+    {
+      "id": 1,
+      "title": "Спринт 1: Подготовка инфраструктуры (Linux)",
+      "task": "Сделать из второго ПК управляемый сервер",
+      "done": true,
+      "notes": "Ubuntu Server 26.04.1, static lease на Mikrotik hap ac3, SSH по ключам, win-data доступна.",
+      "items": [
+        { "id": "s1-os", "text": "Чистый Ubuntu Server 26.04.1 на втором ПК", "done": true },
+        { "id": "s1-dhcp", "text": "Static lease на роутере", "done": true },
+        { "id": "s1-health", "text": "Мониторинг ПК: температура, статус дисков", "done": true },
+        { "id": "s1-hdd", "text": "Подключить HDD, сжать NTFS, разметить ext4, смонтировать", "done": true },
+        { "id": "s1-net", "text": "SSH + доступ к NTFS-разделу с Windows-ПК", "done": true }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Спринт 2: Упаковка приложения (Docker и БД)",
+      "task": "Изоляция процессов, оптимизация образов, связка контейнеров",
+      "done": false,
+      "notes": "",
+      "items": [
+        { "id": "s2-engine", "text": "Docker Engine + Compose из официальных репозиториев", "done": true },
+        { "id": "s2-rootless", "text": "Docker без sudo для обычного пользователя", "done": true },
+        { "id": "s2-dockerfile", "text": "Multi-stage Dockerfile для C++ (g++/cmake -> alpine/distroless)", "done": false },
+        { "id": "s2-hadolint", "text": "Проверка Dockerfile линтером Hadolint", "done": false },
+        { "id": "s2-slim", "text": "Минимум слоев/размера, проверка ldd", "done": false },
+        { "id": "s2-trivy", "text": "Trivy-скан образа на CVE", "done": false },
+        { "id": "s2-compose", "text": "docker-compose.yml: C++ сервис + PostgreSQL/MySQL", "done": false },
+        { "id": "s2-volumes", "text": "Volumes для БД на /mnt/k8s-storage", "done": false },
+        { "id": "s2-ports", "text": "Проброс портов, доступ с Windows-ПК", "done": false }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Спринт 3: Автоматизация конфигурации (Ansible)",
+      "task": "Infrastructure as Code, без ручной настройки",
+      "done": false,
+      "notes": "",
+      "items": [
+        { "id": "s3-install", "text": "Ansible на основном ПК (WSL)", "done": false },
+        { "id": "s3-inventory", "text": "inventory.ini с Kubena", "done": false },
+        { "id": "s3-playbook", "text": "Playbook базовой настройки Ubuntu Server", "done": false },
+        { "id": "s3-roles", "text": "Пакеты, пользователи, SSH, fstab, Docker, Samba", "done": false },
+        { "id": "s3-vault", "text": "vars + ansible-vault для секретов", "done": false },
+        { "id": "s3-idem", "text": "Идемпотентность повторного запуска", "done": false }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Спринт 4: Приватный реестр и CI/CD (Harbor и Runner)",
+      "task": "Enterprise-хранилище образов, сборка по пушу",
+      "done": false,
+      "notes": "",
+      "items": [
+        { "id": "s4-harbor", "text": "Harbor через Docker Compose", "done": false },
+        { "id": "s4-tls", "text": "Самоподписанные SSL, доверие Docker-демона", "done": false },
+        { "id": "s4-robot", "text": "Проект, права, Robot Accounts", "done": false },
+        { "id": "s4-runner", "text": "GitHub/GitLab Runner локально", "done": false },
+        { "id": "s4-pipe", "text": "Пайплайн: push -> build -> SemVer/SHA -> push в Harbor", "done": false }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Спринт 5: Оркестрация Kubernetes (K8s)",
+      "task": "От контейнеров к отказоустойчивому оркестратору",
+      "done": false,
+      "notes": "",
+      "items": [
+        { "id": "s5-distro", "text": "K3s/MicroK8s на Kubena", "done": false },
+        { "id": "s5-kubectl", "text": "kubectl с Windows-ПК", "done": false },
+        { "id": "s5-pull", "text": "Secret + imagePullSecrets для Harbor", "done": false },
+        { "id": "s5-deploy", "text": "Deployment + Service вручную", "done": false },
+        { "id": "s5-limits", "text": "Requests & Limits CPU/Memory", "done": false },
+        { "id": "s5-probes", "text": "Liveness/Readiness/Startup Probes", "done": false },
+        { "id": "s5-conf", "text": "ConfigMap + Secrets для БД", "done": false },
+        { "id": "s5-ingress", "text": "Ingress Traefik/Nginx", "done": false }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Спринт 6: GitOps (ArgoCD)",
+      "task": "Кластер управляется из Git",
+      "done": false,
+      "notes": "",
+      "items": [
+        { "id": "s6-install", "text": "ArgoCD в кластере", "done": false },
+        { "id": "s6-repo", "text": "Отдельный репозиторий манифестов", "done": false },
+        { "id": "s6-connect", "text": "Подключить репо + Harbor к ArgoCD", "done": false },
+        { "id": "s6-app", "text": "Application с polling/webhook", "done": false },
+        { "id": "s6-cycle", "text": "GitOps-цикл: тег в Git -> OutOfSync -> автообновление", "done": false }
+      ]
+    }
+  ]
+}

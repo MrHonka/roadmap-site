@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevOps Roadmap — Kubena</title>
+<style>
+  :root { --bg:#0f141b; --card:#182030; --line:#26324a; --txt:#e8eef7; --mut:#93a1b8;
+          --acc:#4cc38a; --acc2:#6aa8ff; --warn:#ffb454; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+         background:var(--bg); color:var(--txt); }
+  header { position:sticky; top:0; z-index:5; background:rgba(15,20,27,.92);
+           backdrop-filter:blur(6px); border-bottom:1px solid var(--line); }
+  .wrap { max-width:980px; margin:0 auto; padding:18px 16px 40px; }
+  .top { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:6px 0 2px; }
+  .sub { color:var(--mut); font-size:13px; }
+  .bar { height:10px; background:#0b1017; border:1px solid var(--line); border-radius:99px; overflow:hidden; margin-top:10px; }
+  .bar > div { height:100%; width:0; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .3s; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  button { background:var(--acc); color:#06281a; border:0; border-radius:10px;
+           padding:9px 14px; font-weight:700; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--txt); border:1px solid var(--line); }
+  button:disabled { opacity:.55; cursor:wait; }
+  .status { font-size:13px; color:var(--mut); }
+  .status.ok { color:var(--acc); } .status.err { color:#ff7a7a; }
+  .grid { display:grid; gap:12px; margin-top:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .card.done { border-color:rgba(76,195,138,.55); }
+  .card h2 { font-size:16px; margin:0 0 2px; }
+  .task { color:var(--mut); font-size:13px; margin:0 0 10px; }
+  label.item { display:flex; gap:10px; align-items:flex-start; padding:7px 8px;
+               border-radius:10px; cursor:pointer; font-size:14px; }
+  label.item:hover { background:rgba(255,255,255,.04); }
+  input[type=checkbox] { width:17px; height:17px; margin-top:2px; accent-color:var(--acc); }
+  .done-text { text-decoration:line-through; color:var(--mut); }
+  textarea { width:100%; min-height:56px; margin-top:10px; resize:vertical;
+             background:#0b1017; color:var(--txt); border:1px solid var(--line);
+             border-radius:10px; padding:9px 10px; font:inherit; font-size:13px; }
+  .meta { display:flex; justify-content:space-between; gap:8px; margin-top:10px;
+          font-size:12px; color:var(--mut); }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:99px;
+          border:1px solid var(--line); color:var(--mut); }
+  .pill.done { color:#06281a; background:var(--acc); border-color:var(--acc); font-weight:700; }
+  code { background:#0b1017; padding:1px 6px; border-radius:6px; border:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap" style="padding-bottom:14px">
+    <div class="top">
+      <div>
+        <h1>DevOps Roadmap — Kubena</h1>
+        <div class="sub">Спринты 1–6 &middot; <code>GET /api/roadmap</code> / <code>POST /api/roadmap</code> &middot; <code>GET /healthz</code></div>
+      </div>
+      <div class="row" style="margin:0">
+        <button id="save" class="ghost">Сохранить</button>
+        <button id="reload" class="ghost">Обновить</button>
+      </div>
+    </div>
+    <div class="bar"><div id="progress"></div></div>
+    <div class="row"><span class="status" id="status">Загрузка…</span></div>
+  </div>
+</header>
+<main class="wrap">
+  <div class="grid" id="sprints"></div>
+</main>
+<script>
+(function () {
+  const elSprints = document.getElementById('sprints');
+  const elStatus = document.getElementById('status');
+  const elProgress = document.getElementById('progress');
+  const btnSave = document.getElementById('save');
+  const btnReload = document.getElementById('reload');
+  let state = { sprints: [] };
+  let dirty = false;
+
+  function setStatus(msg, cls) {
+    elStatus.textContent = msg;
+    elStatus.className = 'status' + (cls ? ' ' + cls : '');
+  }
+  function counts() {
+    let all = 0, done = 0;
+    for (const s of state.sprints) for (const it of (s.items || [])) { all++; if (it.done) done++; }
+    return { all, done, pct: all ? Math.round(done * 100 / all) : 0 };
+  }
+  function refreshProgress() {
+    const c = counts();
+    elProgress.style.width = c.pct + '%';
+    setStatus(dirty
+      ? `Есть несохраненные изменения — ${c.done}/${c.all} (${c.pct}%)`
+      : `Готово ${c.done}/${c.all} (${c.pct}%)`, dirty ? '' : 'ok');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, m =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+  }
+  function render() {
+    elSprints.innerHTML = '';
+    for (const s of state.sprints) {
+      const card = document.createElement('section');
+      card.className = 'card' + (s.done ? ' done' : '');
+      const items = (s.items || []).map(it => `
+        <label class="item" data-sprint="${s.id}" data-item="${esc(it.id)}">
+          <input type="checkbox" ${it.done ? 'checked' : ''}>
+          <span class="${it.done ? 'done-text' : ''}">${esc(it.text)}</span>
+        </label>`).join('');
+      card.innerHTML = `
+        <h2>${esc(s.title)}</h2>
+        <p class="task">${esc(s.task || '')}</p>
+        <div>${items || '<div class="sub">Нет пунктов</div>'}</div>
+        <textarea placeholder="Заметки спринта…" data-notes="${s.id}">${esc(s.notes || '')}</textarea>
+        <div class="meta">
+          <span class="pill ${s.done ? 'done' : ''}">${s.done ? 'done' : 'in progress'}</span>
+          <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+            <input type="checkbox" data-sprintdone="${s.id}" ${s.done ? 'checked' : ''}> спринт завершен
+          </label>
+        </div>`;
+      elSprints.appendChild(card);
+    }
+    elSprints.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const sprintDone = cb.getAttribute('data-sprintdone');
+        const itemWrap = cb.closest('label.item');
+        if (sprintDone) {
+          const sp = state.sprints.find(x => String(x.id) === sprintDone);
+          if (sp) sp.done = cb.checked;
+        } else if (itemWrap) {
+          const sp = state.sprints.find(x => String(x.id) === itemWrap.getAttribute('data-sprint'));
+          const it = sp && (sp.items || []).find(x => x.id === itemWrap.getAttribute('data-item'));
+          if (it) it.done = cb.checked;
+        }
+        dirty = true; render(); refreshProgress();
+      });
+    });
+    elSprints.querySelectorAll('textarea[data-notes]').forEach(ta => {
+      ta.addEventListener('input', () => {
+        const sp = state.sprints.find(x => String(x.id) === ta.getAttribute('data-notes'));
+        if (sp) sp.notes = ta.value;
+        dirty = true; refreshProgress();
+      });
+    });
+  }
+  async function load() {
+    setStatus('Загрузка…'); btnSave.disabled = true;
+    try {
+      const r = await fetch('/api/roadmap', { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      state = await r.json();
+      dirty = false; render(); refreshProgress();
+      btnSave.classList.remove('ghost');
+    } catch (e) {
+      setStatus('Бэкенд недоступен: ' + e.message + ' (проверь, что сервер запущен)', 'err');
+    } finally { btnSave.disabled = false; }
+  }
+  async function save() {
+    // Собираем заметки из DOM (чекбоксы уже в state через события).
+    elSprints.querySelectorAll('textarea[data-notes]').forEach(ta => {
+      const sp = state.sprints.find(x => String(x.id) === ta.getAttribute('data-notes'));
+      if (sp) sp.notes = ta.value;
+    });
+    btnSave.disabled = true; setStatus('Сохранение…');
+    try {
+      const r = await fetch('/api/roadmap', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      });
+      const body = await r.text();
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + body);
+      dirty = false; refreshProgress(); setStatus('Сохранено', 'ok');
+    } catch (e) { setStatus('Ошибка сохранения: ' + e.message, 'err'); }
+    finally { btnSave.disabled = false; }
+  }
+  btnSave.addEventListener('click', save);
+  btnReload.addEventListener('click', load);
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  });
+  load();
+})();
+</script>
+</body>
+</html>
