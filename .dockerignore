@@ -1,0 +1,6 @@
+.git/
+build/
+*.o
+*.tmp
+data/*.tmp
+data/*.bak
