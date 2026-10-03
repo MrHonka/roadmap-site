@@ -31,8 +31,8 @@ services:
       POSTGRES_DB: roadmap
     volumes:
       # Данные БД. На Kubena замени на bind к диску:
-      # - /mnt/k8s-storage/pgdata:/var/lib/postgresql/data
-      - pgdata:/var/lib/postgresql/data
+      - /mnt/k8s-storage/pgdata:/var/lib/postgresql/data
+      # - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U roadmap -d roadmap"]
