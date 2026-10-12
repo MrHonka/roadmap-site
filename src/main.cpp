@@ -124,8 +124,14 @@ class Store {
     return ExecSimple(kSql, err);
   }
 
-  // SELECT 1 для /readyz.
-  bool Ping(std::string& err) { return ExecSimple("SELECT 1;", err); }
+  // SELECT 1 для /readyz. SELECT возвращает строки (TUPLES_OK),
+  // а не COMMAND_OK — проверять надо соответствующим чекером.
+  bool Ping(std::string& err) {
+    PGresult* r = PQexec(conn_, "SELECT 1;");
+    const bool ok = CheckTuples(r, err);
+    PQclear(r);
+    return ok;
+  }
 
   bool IsEmpty(bool& empty, std::string& err) {
     PGresult* r = PQexec(conn_, "SELECT COUNT(*) FROM sprints;");
@@ -140,12 +146,16 @@ class Store {
     PGresult* sprints =
         PQexec(conn_,
                "SELECT id, title, task, done, notes FROM sprints ORDER BY id;");
-    if (!CheckTuples(sprints, err)) return false;
+    if (!CheckTuples(sprints, err)) {
+      PQclear(sprints);
+      return false;
+    }
     PGresult* items = PQexec(
         conn_,
         "SELECT sprint_id, item_id, text, done FROM items ORDER BY sprint_id;");
     if (!CheckTuples(items, err)) {
       PQclear(sprints);
+      PQclear(items);
       return false;
     }
     // Раскладываем пункты по спринтам в памяти (N маленькое — можно).
@@ -201,6 +211,7 @@ class Store {
           " VALUES ($1::int, $2, $3, $4::boolean, $5);",
           5, nullptr, vals, nullptr, nullptr, 0);
       if (!CheckCommand(r, err)) {
+        PQclear(r);
         ExecSimple("ROLLBACK;", err);
         return false;
       }
@@ -216,6 +227,7 @@ class Store {
             " VALUES ($1::int, $2, $3, $4::boolean);",
             4, nullptr, ivals, nullptr, nullptr, 0);
         if (!CheckCommand(ir, err)) {
+          PQclear(ir);
           ExecSimple("ROLLBACK;", err);
           return false;
         }
@@ -235,10 +247,11 @@ class Store {
     return ok;
   }
 
+  // Чекеры НЕ освобождают результат: владелец всегда caller,
+  // иначе двойной PQclear (double-free) роняет процесс.
   bool CheckCommand(PGresult* r, std::string& err) {
     if (!r || PQresultStatus(r) != PGRES_COMMAND_OK) {
       err = r ? PQresultErrorMessage(r) : std::string(PQerrorMessage(conn_));
-      if (r) PQclear(r);
       return false;
     }
     return true;
@@ -247,7 +260,6 @@ class Store {
   bool CheckTuples(PGresult* r, std::string& err) {
     if (!r || PQresultStatus(r) != PGRES_TUPLES_OK) {
       err = r ? PQresultErrorMessage(r) : std::string(PQerrorMessage(conn_));
-      if (r) PQclear(r);
       return false;
     }
     return true;
