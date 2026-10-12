@@ -237,7 +237,7 @@ class Store {
 
   bool CheckCommand(PGresult* r, std::string& err) {
     if (!r || PQresultStatus(r) != PGRES_COMMAND_OK) {
-      err = r ? PQerrorMessage(r) : std::string(PQerrorMessage(conn_));
+      err = r ? PQresultErrorMessage(r) : std::string(PQerrorMessage(conn_));
       if (r) PQclear(r);
       return false;
     }
@@ -246,7 +246,7 @@ class Store {
 
   bool CheckTuples(PGresult* r, std::string& err) {
     if (!r || PQresultStatus(r) != PGRES_TUPLES_OK) {
-      err = r ? PQerrorMessage(r) : std::string(PQerrorMessage(conn_));
+      err = r ? PQresultErrorMessage(r) : std::string(PQerrorMessage(conn_));
       if (r) PQclear(r);
       return false;
     }
