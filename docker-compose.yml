@@ -1,6 +1,6 @@
 # Спринт 2: связка C++ сервис + PostgreSQL.
-# app пока хранит состояние в JSON (./data -> /app/data),
-# postgres поднимаем заранее — драйвер подключим следом.
+# app хранит состояние в Postgres (DATABASE_URL, хост db).
+# ./data:/app/data оставлен как seed для первого старта.
 services:
   app:
     build: .
@@ -9,7 +9,7 @@ services:
     environment:
       PORT: "8080"
       WEB_ROOT: /app/web
-      ROADMAP_FILE: /app/data/roadmap.json
+      DATABASE_URL: "postgresql://roadmap:roadmap_pw_change_me@db:5432/roadmap?connect_timeout=5"
     volumes:
       # JSON-хранилище живет на хосте, переживает пересборку образа.
       - ./data:/app/data

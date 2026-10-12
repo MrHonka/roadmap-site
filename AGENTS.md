@@ -21,10 +21,10 @@
 - SSH: `ssh.service=inactive + ssh.socket=listening` = норма (socket-активация), не чинить.
 - Docker база: образ (шаблон на диске) vs контейнер (живой процесс). `docker ps` = всё на хосте, `docker compose ps` = только проект. Порты `лево:право` = хост:контейнер. `WORKDIR /app` → `exec` стартует в /app. Bind vs named volume. `/var/lib/docker` только через sudo. `up -d` применяет yml (пересоздает), `restart` — нет.
 - Лабы done: смена порта 8080→8081, `exec app sh` + `ls/cat`, сайт сохраняет галочки в JSON по кнопке Сохранить.
-- Лабы done: (3) роняем db и смотрим depends_on/logs, (4) перенос pgdata на /mnt/k8s-storage.
+- Лабы done: (3) роняем db и смотрим depends_on/logs, (4) перенос pgdata на /mnt/k8s-storage, (5) hadolint чисто + trivy-скан (340: принят) + ldd.
 
 ## Текущий этап
-- Спринт 2 в процессе. Осталось: (5) hadolint + trivy + ldd.
+- Спринт 2 в процессе. Осталось: Postgres-драйвер в C++ вместо JSON.
 - Дальше по плану: Postgres-драйвер в C++ вместо JSON, затем Спринт 3 (Ansible).
 
 ## Как отвечать
