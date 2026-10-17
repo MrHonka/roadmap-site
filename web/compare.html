@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Image Compare — roadmap-site</title>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
   :root { --bg:#0f141b; --card:#182030; --line:#26324a; --txt:#e8eef7; --mut:#93a1b8;
           --acc:#4cc38a; --acc2:#6aa8ff; --warn:#ffb454; }
@@ -15,7 +14,7 @@
   .wrap { max-width:1200px; margin:0 auto; padding:12px 16px; }
   h1 { font-size:18px; margin:4px 0 2px; }
   .sub { color:var(--mut); font-size:12px; }
-  .row { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   button { background:var(--acc); color:#06281a; border:0; border-radius:8px;
            padding:7px 12px; font-weight:700; cursor:pointer; font-size:13px; }
   button.ghost { background:transparent; color:var(--txt); border:1px solid var(--line); }
@@ -23,13 +22,12 @@
   button:disabled { opacity:.55; cursor:wait; }
   .status { font-size:12px; color:var(--mut); }
   .status.ok { color:var(--acc); } .status.err { color:#ff7a7a; }
-  label { font-size:12px; color:var(--mut); }
+  label { font-size:12px; color:var(--mut); display:flex; align-items:center; gap:4px; }
   select, input[type=number], input[type=text] {
     background:#0b1017; color:var(--txt); border:1px solid var(--line);
     border-radius:6px; padding:5px 7px; font:inherit; font-size:12px; }
   code { background:#0b1017; padding:1px 5px; border-radius:4px; border:1px solid var(--line); }
 
-  /* main area */
   .main { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; }
   .preview { flex:1 1 auto; display:flex; gap:12px; padding:12px 16px; min-height:0; align-items:stretch; }
   .preview .pane { flex:1 1 0; background:var(--card); border:1px solid var(--line); border-radius:12px;
@@ -46,7 +44,6 @@
   .sim-badge { font-size:20px; font-weight:800; }
   .sim-badge.high { color:var(--acc); } .sim-badge.med { color:var(--warn); } .sim-badge.low { color:#ff7a7a; }
 
-  /* bottom list */
   .listbar { flex:0 0 25%; border-top:2px solid var(--line); display:flex; flex-direction:column; min-height:120px; }
   .listbar .toolbar { padding:8px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .listbar .scroll { flex:1 1 auto; overflow-y:auto; padding:6px 16px; }
@@ -57,53 +54,33 @@
   .pair-item .left { color:var(--txt); }
   .pair-item .right { color:var(--mut); white-space:nowrap; }
   .empty { color:var(--mut); font-size:12px; padding:10px; }
-
-  /* top controls */
-  .topcontrols { padding:8px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:8px; }
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
-    <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <div style="display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap">
       <div>
         <h1>Image Compare</h1>
-        <div class="sub">Поиск похожих изображений (перцептивный хэш) · <code>/api/compare/*</code></div>
+        <div class="sub">Поиск похожих изображений (перцептивный хэш)</div>
       </div>
-      <div class="row" style="margin:0">
+      <div class="row">
+        <label>Папка A:
+          <input type="text" id="scanPathA" placeholder="/" style="width:200px">
+        </label>
+        <label>Папка B:
+          <input type="text" id="scanPathB" placeholder="— внутри A —" style="width:200px">
+        </label>
+        <label>Порог %:
+          <input type="number" id="threshold" value="50" min="0" max="100" style="width:60px">
+        </label>
+        <button id="scanBtn">Сканировать и сравнить</button>
         <a href="/" style="color:var(--acc2);text-decoration:none;font-size:12px">← Roadmap</a>
+        <span class="status" id="scanStatus"></span>
       </div>
     </div>
   </div>
 </header>
-
-<div class="topcontrols">
-  <label>Галерея A:
-    <select id="galleryA"></select>
-  </label>
-  <label>Галерея B (иначе внутри A):
-    <select id="galleryB"><option value="">— внутри A —</option></select>
-  </label>
-  <label>Порог %:
-    <input type="number" id="threshold" value="50" min="0" max="100" style="width:60px">
-  </label>
-  <button id="compareBtn">Сравнить</button>
-  <button id="deleteGalleryBtn" class="danger">Удалить галерею A</button>
-  <button id="downloadBtn" class="ghost">Скачать коллекцию A</button>
-  <span class="status" id="status">Готово</span>
-</div>
-
-<div class="topcontrols" style="border-top:1px solid var(--line)">
-  <label>Папка A (на хосте):
-    <input type="text" id="scanPathA" placeholder="/mnt/win-data/Media/Pics" style="flex:1;min-width:200px">
-  </label>
-  <label>Папка B (опционально):
-    <input type="text" id="scanPathB" placeholder="— внутри A —" style="flex:1;min-width:200px">
-  </label>
-  <button id="scanBtn">Сканировать</button>
-  <span class="status" id="scanStatus"></span>
-</div>
 
 <div class="main">
   <div class="preview" id="preview">
@@ -147,11 +124,11 @@
 
 <script>
 (function () {
-  const elStatus = document.getElementById('status');
-  const elGalleryA = document.getElementById('galleryA');
-  const elGalleryB = document.getElementById('galleryB');
   const elPairList = document.getElementById('pairList');
   const elCompareStatus = document.getElementById('compareStatus');
+  const elScanStatus = document.getElementById('scanStatus');
+  const elScanPathA = document.getElementById('scanPathA');
+  const elScanPathB = document.getElementById('scanPathB');
 
   const imgA = document.getElementById('imgA');
   const imgB = document.getElementById('imgB');
@@ -167,14 +144,14 @@
   const delB = document.getElementById('delB');
   const delBoth = document.getElementById('delBoth');
 
-  let galleries = [];
+  const MEDIA_ROOT = window.__MEDIA_ROOT__ || '/mnt/win-data/Media/Pics';
+
   let pairs = [];
   let activeIndex = -1;
-  let pendingFiles = [];
 
   function setStatus(msg, cls) {
-    elStatus.textContent = msg;
-    elStatus.className = 'status' + (cls ? ' ' + cls : '');
+    elScanStatus.textContent = msg;
+    elScanStatus.className = 'status' + (cls ? ' ' + cls : '');
   }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -194,82 +171,57 @@
     return (a.size_bytes||0) >= (b.size_bytes||0) ? 'a' : 'b';
   }
 
-  async function loadGalleries() {
-    try {
-      const d = await api('/api/compare/galleries');
-      galleries = d.galleries || [];
-      renderGallerySelects();
-      setStatus('Галерей: ' + galleries.length, 'ok');
-    } catch (e) { setStatus('Ошибка: ' + e.message, 'err'); }
-  }
-
-  function renderGallerySelects() {
-    const opts = galleries.map(g => `<option value="${g.id}">${esc(g.name)} (id ${g.id})</option>`).join('');
-    elGalleryA.innerHTML = opts;
-    elGalleryB.innerHTML = '<option value="">— внутри A —</option>' + opts;
-  }
-
-  // scan host directories
-  const elScanStatus = document.getElementById('scanStatus');
-  const elScanPathA = document.getElementById('scanPathA');
-  const elScanPathB = document.getElementById('scanPathB');
-  const MEDIA_ROOT = window.__MEDIA_ROOT__ || '/mnt/win-data/Media/Pics';
   document.getElementById('scanBtn').addEventListener('click', async () => {
     const pathA = elScanPathA.value.trim();
     if (!pathA) { alert('Укажите путь до папки A'); return; }
     const fullA = pathA.startsWith('/') ? MEDIA_ROOT + pathA : MEDIA_ROOT + '/' + pathA;
     const pathB = elScanPathB.value.trim();
     const fullB = pathB ? (pathB.startsWith('/') ? MEDIA_ROOT + pathB : MEDIA_ROOT + '/' + pathB) : '';
-    elScanStatus.textContent = 'Сканирование…';
-    elScanStatus.className = 'status';
+    const threshold = parseInt(document.getElementById('threshold').value, 10) || 50;
+
+    setStatus('Сканирование…');
     try {
       const d = await api('/api/compare/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: fullA })
       });
-      elScanStatus.textContent = `A: найдено ${d.count} файлов`;
-      let d2 = null;
+      setStatus(`A: найдено ${d.count} файлов`);
+      let gidA = d.gallery_id;
+      let gidB = null;
+
       if (pathB) {
-        d2 = await api('/api/compare/scan', {
+        const d2 = await api('/api/compare/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: fullB })
         });
-        elScanStatus.textContent += `, B: найдено ${d2.count} файлов`;
+        gidB = d2.gallery_id;
+        setStatus(`A: ${d.count}, B: ${d2.count} файлов. Сравнение…`);
+      } else {
+        setStatus(`A: ${d.count} файлов. Сравнение…`);
       }
-      await loadGalleries();
-      elGalleryA.value = d.gallery_id;
-      if (pathB) elGalleryB.value = d2.gallery_id;
-      document.getElementById('compareBtn').click();
-    } catch (e) {
-      elScanStatus.textContent = 'Ошибка: ' + e.message;
-      elScanStatus.className = 'status err';
-    }
-  });
 
-  // compare
-  document.getElementById('compareBtn').addEventListener('click', async () => {
-    const a = elGalleryA.value;
-    if (!a) { alert('Выберите галерею A'); return; }
-    const b = elGalleryB.value;
-    const threshold = parseInt(document.getElementById('threshold').value, 10) || 50;
-    elCompareStatus.textContent = 'Сравнение…';
-    pairs = []; activeIndex = -1; renderPairList(); clearPreview();
-    try {
-      const body = { gallery_a_id: parseInt(a,10), threshold };
-      if (b) body.gallery_b_id = parseInt(b,10);
-      const d = await api('/api/compare/compare', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      const cmp = await api('/api/compare/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gallery_a_id: gidA,
+          gallery_b_id: gidB,
+          threshold: threshold
+        })
       });
-      pairs = d.pairs || [];
+
+      pairs = cmp.pairs || [];
+      activeIndex = -1;
+      renderPairList();
+      clearPreview();
       elCompareStatus.textContent = `Найдено пар: ${pairs.length} (порог ${threshold}%)`;
       elCompareStatus.className = 'status ok';
-      renderPairList();
       if (pairs.length) selectPair(0);
+      setStatus('Готово', 'ok');
     } catch (e) {
-      elCompareStatus.textContent = 'Ошибка: ' + e.message;
-      elCompareStatus.className = 'status err';
+      setStatus('Ошибка: ' + e.message, 'err');
     }
   });
 
@@ -343,44 +295,6 @@
     await deleteImage(p.image_a.id, p.image_a.source_path);
     await deleteImage(p.image_b.id, p.image_b.source_path);
   });
-
-  // download collection A as zip
-  document.getElementById('downloadBtn').addEventListener('click', async () => {
-    const gid = elGalleryA.value;
-    if (!gid) { alert('Выберите галерею A'); return; }
-    try {
-      const d = await api('/api/compare/images?gallery_id=' + gid);
-      const imgs = d.images || [];
-      if (!imgs.length) { alert('Галерея пуста'); return; }
-      const zip = new JSZip();
-      for (const img of imgs) {
-        const resp = await fetch(img.url);
-        const blob = await resp.blob();
-        zip.file(img.filename, blob);
-      }
-      const content = await zip.generateAsync({type:'blob'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(content);
-      a.download = 'gallery_' + gid + '.zip';
-      a.click();
-      URL.revokeObjectURL(a.href);
-    } catch (e) { alert('Ошибка скачивания: ' + e.message); }
-  });
-
-  document.getElementById('deleteGalleryBtn').addEventListener('click', async () => {
-    const gid = elGalleryA.value;
-    if (!gid) { alert('Выберите галерею'); return; }
-    if (!confirm('Удалить галерею и все её изображения?')) return;
-    try {
-      await api('/api/compare/galleries/' + gid, { method:'DELETE' });
-      await loadGalleries();
-      pairs = []; activeIndex = -1; renderPairList(); clearPreview();
-      elCompareStatus.textContent = 'Галерея удалена';
-      elCompareStatus.className = 'status ok';
-    } catch (e) { alert(e.message); }
-  });
-
-  loadGalleries();
 })();
 </script>
 </body>
