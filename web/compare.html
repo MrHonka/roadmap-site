@@ -89,6 +89,7 @@
     <input type="number" id="threshold" value="50" min="0" max="100" style="width:60px">
   </label>
   <button id="compareBtn">Сравнить</button>
+  <button id="deleteGalleryBtn" class="danger">Удалить галерею A</button>
   <button id="downloadBtn" class="ghost">Скачать коллекцию A</button>
   <span class="status" id="status">Готово</span>
 </div>
@@ -368,6 +369,19 @@
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) { alert('Ошибка скачивания: ' + e.message); }
+  });
+
+  document.getElementById('deleteGalleryBtn').addEventListener('click', async () => {
+    const gid = elGalleryA.value;
+    if (!gid) { alert('Выберите галерею'); return; }
+    if (!confirm('Удалить галерею и все её изображения?')) return;
+    try {
+      await api('/api/compare/galleries/' + gid, { method:'DELETE' });
+      await loadGalleries();
+      pairs = []; activeIndex = -1; renderPairList(); clearPreview();
+      elCompareStatus.textContent = 'Галерея удалена';
+      elCompareStatus.className = 'status ok';
+    } catch (e) { alert(e.message); }
   });
 
   loadGalleries();

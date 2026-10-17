@@ -430,7 +430,7 @@ class CompareStore {
         conn_,
         "INSERT INTO compare_galleries (name) VALUES ($1) RETURNING id;",
         1, nullptr, vals, nullptr, nullptr, 0);
-    if (!CheckCommand(r, err)) { PQclear(r); return false; }
+    if (!CheckTuples(r, err)) { PQclear(r); return false; }
     id = std::atoi(PQgetvalue(r, 0, 0));
     PQclear(r);
     return true;
@@ -489,7 +489,7 @@ class CompareStore {
         " VALUES ($1::int, $2, $3, $4, $5::int, $6::int, $7::int)"
         " RETURNING id;",
         7, nullptr, vals, nullptr, nullptr, 0);
-    if (!CheckCommand(r, err)) { PQclear(r); return false; }
+    if (!CheckTuples(r, err)) { PQclear(r); return false; }
     out_id = std::atoi(PQgetvalue(r, 0, 0));
     PQclear(r);
     return true;
@@ -589,7 +589,7 @@ class CompareStore {
         "INSERT INTO compare_runs (gallery_a_id, gallery_b_id, threshold)"
         " VALUES ($1::int, $2::int, $3::int) RETURNING id;",
         3, nullptr, rvals, nullptr, nullptr, 0);
-    if (!CheckCommand(rr, err)) { PQclear(rr); ExecSimple("ROLLBACK;", err); return false; }
+    if (!CheckTuples(rr, err)) { PQclear(rr); ExecSimple("ROLLBACK;", err); return false; }
     run_id = std::atoi(PQgetvalue(rr, 0, 0));
     PQclear(rr);
 
