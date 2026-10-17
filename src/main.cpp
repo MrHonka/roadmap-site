@@ -391,19 +391,37 @@ class CompareStore {
         " uploaded_at TIMESTAMP DEFAULT NOW());"
         "CREATE TABLE IF NOT EXISTS compare_runs ("
         " id SERIAL PRIMARY KEY,"
-        " gallery_a_id INTEGER NOT NULL REFERENCES compare_galleries(id),"
-        " gallery_b_id INTEGER REFERENCES compare_galleries(id),"
+        " gallery_a_id INTEGER NOT NULL REFERENCES compare_galleries(id)"
+        " ON DELETE CASCADE,"
+        " gallery_b_id INTEGER REFERENCES compare_galleries(id)"
+        " ON DELETE CASCADE,"
         " threshold INTEGER NOT NULL DEFAULT 0,"
         " created_at TIMESTAMP DEFAULT NOW());"
         "CREATE TABLE IF NOT EXISTS compare_results ("
         " id SERIAL PRIMARY KEY,"
         " run_id INTEGER NOT NULL REFERENCES compare_runs(id)"
         " ON DELETE CASCADE,"
-        " image_a_id INTEGER NOT NULL REFERENCES compare_images(id),"
-        " image_b_id INTEGER NOT NULL REFERENCES compare_images(id),"
+        " image_a_id INTEGER NOT NULL REFERENCES compare_images(id)"
+        " ON DELETE CASCADE,"
+        " image_b_id INTEGER NOT NULL REFERENCES compare_images(id)"
+        " ON DELETE CASCADE,"
         " hamming_distance INTEGER NOT NULL,"
         " similarity REAL NOT NULL);";
-    return ExecSimple(kSql, err);
+    if (!ExecSimple(kSql, err)) return false;
+    // Миграция существующих таблиц: каскадное удаление результатов/ранов.
+    ExecSimple("ALTER TABLE compare_results DROP CONSTRAINT IF EXISTS compare_results_image_a_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_results ADD CONSTRAINT compare_results_image_a_id_fkey FOREIGN KEY (image_a_id) REFERENCES compare_images(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_results DROP CONSTRAINT IF EXISTS compare_results_image_b_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_results ADD CONSTRAINT compare_results_image_b_id_fkey FOREIGN KEY (image_b_id) REFERENCES compare_images(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_results DROP CONSTRAINT IF EXISTS compare_results_run_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_results ADD CONSTRAINT compare_results_run_id_fkey FOREIGN KEY (run_id) REFERENCES compare_runs(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_runs DROP CONSTRAINT IF EXISTS compare_runs_gallery_a_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_runs ADD CONSTRAINT compare_runs_gallery_a_id_fkey FOREIGN KEY (gallery_a_id) REFERENCES compare_galleries(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_runs DROP CONSTRAINT IF EXISTS compare_runs_gallery_b_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_runs ADD CONSTRAINT compare_runs_gallery_b_id_fkey FOREIGN KEY (gallery_b_id) REFERENCES compare_galleries(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_images DROP CONSTRAINT IF EXISTS compare_images_gallery_id_fkey;", err);
+    ExecSimple("ALTER TABLE compare_images ADD CONSTRAINT compare_images_gallery_id_fkey FOREIGN KEY (gallery_id) REFERENCES compare_galleries(id) ON DELETE CASCADE;", err);
+    return true;
   }
 
   std::mutex& Mutex() { return mutex_; }
