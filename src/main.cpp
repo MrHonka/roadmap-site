@@ -576,7 +576,7 @@ class CompareStore {
   // Scan a host filesystem directory, compute hashes, add images to gallery.
   // Files stay on the host; source_path is stored for preview and deletion.
   // Exposed for host-file DELETE handler which runs outside RunCompare.
-  PGconn* conn_ = nullptr;
+  PGconn* Conn() { return conn_; }
 
   bool ScanDirectory(int gallery_id, const std::string& host_path,
                      json& out_files, std::string& err) {
@@ -1185,7 +1185,7 @@ int main() {
     std::lock_guard<std::mutex> lock(cstore.Mutex());
     const char* vals[] = {abs.c_str()};
     PGresult* r = PQexecParams(
-        cstore.conn_,
+        cstore.Conn(),
         "DELETE FROM compare_images WHERE stored_name=$1;",
         1, nullptr, vals, nullptr, nullptr, 0);
     if (!r || PQresultStatus(r) != PGRES_COMMAND_OK) {
