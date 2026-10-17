@@ -328,10 +328,17 @@ class Store {
   }
 
   std::string conninfo_;
-  std::string uploads_dir_;
+  std::string base_dir_;
   PGconn* conn_ = nullptr;
   std::mutex mutex_;
 };
+
+// Reject absolute paths and traversal sequences to prevent path traversal.
+static bool IsSafePath(const std::string& p) {
+  if (p.empty() || p.find("..") != std::string::npos) return false;
+  if (p[0] == '/' || (p.size() > 1 && p[1] == ':')) return false;
+  return true;
+}
 
 // --- Image comparison layer ------------------------------------------------
 // Mirrors Image Comparer: folders -> galleries with stored perceptual hashes,
@@ -347,10 +354,11 @@ class CompareStore {
     int width = 0;
     int height = 0;
     int size_bytes = 0;
+    bool is_host = false;
   };
 
-  explicit CompareStore(std::string conninfo, std::string uploads_dir)
-      : conninfo_(std::move(conninfo)), uploads_dir_(std::move(uploads_dir)) {}
+  explicit CompareStore(std::string conninfo, std::string base_dir)
+      : conninfo_(std::move(conninfo)), base_dir_(std::move(base_dir)) {}
 
   bool Connect() {
     for (int attempt = 1; attempt <= 30; ++attempt) {
@@ -421,6 +429,8 @@ class CompareStore {
     ExecSimple("ALTER TABLE compare_runs ADD CONSTRAINT compare_runs_gallery_b_id_fkey FOREIGN KEY (gallery_b_id) REFERENCES compare_galleries(id) ON DELETE CASCADE;", err);
     ExecSimple("ALTER TABLE compare_images DROP CONSTRAINT IF EXISTS compare_images_gallery_id_fkey;", err);
     ExecSimple("ALTER TABLE compare_images ADD CONSTRAINT compare_images_gallery_id_fkey FOREIGN KEY (gallery_id) REFERENCES compare_galleries(id) ON DELETE CASCADE;", err);
+    ExecSimple("ALTER TABLE compare_images ADD COLUMN IF NOT EXISTS stored_name TEXT;", err);
+    ExecSimple("ALTER TABLE compare_images ADD COLUMN IF NOT EXISTS source_path TEXT;", err);
     return true;
   }
 
@@ -484,8 +494,48 @@ class CompareStore {
       img.height = std::atoi(PQgetvalue(r, i, 5));
       img.size_bytes = std::atoi(PQgetvalue(r, i, 6));
       img.gallery_id = gallery_id;
+      img.is_host = !img.stored_name.empty() && img.stored_name[0] == '/';
       out.push_back(img);
     }
+    PQclear(r);
+    return true;
+  }
+
+  static std::string UrlEncode(const std::string& s) {
+    std::string out;
+    for (unsigned char c : s) {
+      if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+        out += static_cast<char>(c);
+      } else {
+        char buf[8];
+        std::snprintf(buf, sizeof(buf), "%%%02X", c);
+        out += buf;
+      }
+    }
+    return out;
+  }
+
+  // Like AddImage but stores an absolute host path instead of a stored_name.
+  bool AddImageWithSource(int gallery_id, const std::string& filename,
+                          const std::string& source_path, uint64_t hash,
+                          int w, int h, int size_bytes, int& out_id,
+                          std::string& err) {
+    char hashbuf[32];
+    std::snprintf(hashbuf, sizeof(hashbuf), "%016llx",
+                  static_cast<unsigned long long>(hash));
+    const char* vals[] = {
+        std::to_string(gallery_id).c_str(), filename.c_str(),
+        source_path.c_str(), hashbuf, std::to_string(w).c_str(),
+        std::to_string(h).c_str(), std::to_string(size_bytes).c_str()};
+    PGresult* r = PQexecParams(
+        conn_,
+        "INSERT INTO compare_images (gallery_id, filename, stored_name, hash,"
+        " width, height, size_bytes)"
+        " VALUES ($1::int, $2, $3, $4, $5::int, $6::int, $7::int)"
+        " RETURNING id;",
+        7, nullptr, vals, nullptr, nullptr, 0);
+    if (!CheckTuples(r, err)) { PQclear(r); return false; }
+    out_id = std::atoi(PQgetvalue(r, 0, 0));
     PQclear(r);
     return true;
   }
@@ -514,24 +564,58 @@ class CompareStore {
   }
 
   bool DeleteImage(int id, std::string& err) {
-    const char* v[] = {std::to_string(id).c_str()};
-    PGresult* r = PQexecParams(conn_,
-        "SELECT stored_name FROM compare_images WHERE id=$1::int;",
-        1, nullptr, v, nullptr, nullptr, 0);
-    std::string stored;
-    if (r && PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) > 0)
-      stored = PQgetvalue(r, 0, 0);
-    PQclear(r);
     const char* v2[] = {std::to_string(id).c_str()};
     PGresult* r2 = PQexecParams(conn_,
         "DELETE FROM compare_images WHERE id=$1::int;",
         1, nullptr, v2, nullptr, nullptr, 0);
     if (!CheckCommand(r2, err)) { PQclear(r2); return false; }
     PQclear(r2);
-    if (!stored.empty()) {
-      std::error_code ec;
-      fs::remove(uploads_dir_ + "/" + stored, ec);
+    return true;
+  }
+
+  // Scan a host filesystem directory, compute hashes, add images to gallery.
+  // Files stay on the host; source_path is stored for preview and deletion.
+  // Exposed for host-file DELETE handler which runs outside RunCompare.
+  PGconn* conn_ = nullptr;
+
+  bool ScanDirectory(int gallery_id, const std::string& host_path,
+                     json& out_files, std::string& err) {
+    out_files.clear();
+    if (!fs::exists(host_path) || !fs::is_directory(host_path)) {
+      err = "path is not a directory: " + host_path;
+      return false;
     }
+    json files = json::array();
+    std::error_code ec;
+    for (auto& entry : fs::recursive_directory_iterator(host_path, ec)) {
+      if (ec) break;
+      if (!entry.is_regular_file()) continue;
+      if (!HasImageExt(entry.path().filename().string())) continue;
+
+      const std::string abs = fs::absolute(entry.path()).string();
+      uint64_t hash = 0;
+      int w = 0, h = 0;
+      if (!ComputeAverageHash(abs, hash, w, h)) continue;
+
+      auto sz = fs::file_size(entry.path(), ec);
+      int size_bytes = ec ? 0 : static_cast<int>(sz);
+
+      int img_id = 0;
+      if (!AddImageWithSource(gallery_id, entry.path().filename().string(),
+                               abs, hash, w, h, size_bytes, img_id, err)) {
+        return false;
+      }
+      json f;
+      f["id"] = img_id;
+      f["filename"] = entry.path().filename().string();
+      f["source_path"] = abs;
+      f["url"] = "/api/host-files?path=" + UrlEncode(abs);
+      f["width"] = w;
+      f["height"] = h;
+      f["size_bytes"] = size_bytes;
+      files.push_back(std::move(f));
+    }
+    out_files = std::move(files);
     return true;
   }
 
@@ -580,14 +664,16 @@ class CompareStore {
             {"id", a.id}, {"filename", a.filename},
             {"gallery_name", name_a},
             {"label", name_a + "/" + a.filename},
-            {"url", "/uploads/" + a.stored_name}, {"width", a.width},
-            {"height", a.height}, {"size_bytes", a.size_bytes}};
+            {"url", a.is_host ? "/api/host-files?path=" + UrlEncode(a.stored_name) : "/uploads/" + a.stored_name},
+            {"width", a.width}, {"height", a.height}, {"size_bytes", a.size_bytes},
+            {"source_path", a.is_host ? a.stored_name : ""}};
         pair["image_b"] = {
             {"id", b.id}, {"filename", b.filename},
             {"gallery_name", name_b},
             {"label", name_b + "/" + b.filename},
-            {"url", "/uploads/" + b.stored_name}, {"width", b.width},
-            {"height", b.height}, {"size_bytes", b.size_bytes}};
+            {"url", b.is_host ? "/api/host-files?path=" + UrlEncode(b.stored_name) : "/uploads/" + b.stored_name},
+            {"width", b.width}, {"height", b.height}, {"size_bytes", b.size_bytes},
+            {"source_path", b.is_host ? b.stored_name : ""}};
         pair["hamming_distance"] = dist;
         pair["similarity"] = std::round(similarity * 100.0) / 100.0;
         pair["similarity_pct"] = static_cast<int>(std::round(similarity * 100.0));
@@ -662,7 +748,7 @@ class CompareStore {
   }
 
   std::string conninfo_;
-  std::string uploads_dir_;
+  std::string base_dir_;
   PGconn* conn_ = nullptr;
   std::mutex mutex_;
 };
@@ -965,6 +1051,7 @@ int main() {
       o["height"] = img.height;
       o["size_bytes"] = img.size_bytes;
       o["hash"] = img.hash != 0;
+      o["source_path"] = img.is_host ? img.stored_name : "";
       arr.push_back(std::move(o));
     }
     res.set_content(json({{"images", arr}}).dump(), "application/json");
@@ -982,6 +1069,141 @@ int main() {
                }
                res.set_content(R"({"status":"deleted"})", "application/json");
              });
+
+  svr.Post("/api/compare/scan", [&](const httplib::Request& req,
+                                    httplib::Response& res) {
+    json j;
+    try {
+      j = json::parse(req.body);
+    } catch (const std::exception& e) {
+      res.status = 400;
+      res.set_content(
+          json({{"error", std::string("invalid json: ") + e.what()}}).dump(),
+          "application/json");
+      return;
+    }
+    std::string path = j.value("path", "");
+    if (path.empty()) {
+      res.status = 400;
+      res.set_content(json({{"error", "path required"}}).dump(),
+                      "application/json");
+      return;
+    }
+    if (!IsSafePath(path)) {
+      res.status = 400;
+      res.set_content(json({{"error", "path contains traversal"}}).dump(),
+                      "application/json");
+      return;
+    }
+    // Resolve to absolute path for scanning.
+    std::error_code ec;
+    std::string abs_path = fs::absolute(path, ec).string();
+    if (ec) {
+      res.status = 400;
+      res.set_content(json({{"error", "invalid path: " + ec.message()}}).dump(),
+                      "application/json");
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(cstore.Mutex());
+    int gallery_id = 0;
+    std::string err;
+    if (!j.contains("gallery_id") || !j["gallery_id"].is_number_integer()) {
+      std::string gname = j.value("gallery_name", fs::path(abs_path).filename().string());
+      if (!cstore.CreateGallery(gname, gallery_id, err)) {
+        res.status = 500;
+        res.set_content(json({{"error", err}}).dump(), "application/json");
+        return;
+      }
+    } else {
+      gallery_id = j["gallery_id"].get<int>();
+    }
+
+    json files;
+    if (!cstore.ScanDirectory(gallery_id, abs_path, files, err)) {
+      res.status = 500;
+      res.set_content(json({{"error", err}}).dump(), "application/json");
+      return;
+    }
+    res.set_content(
+        json({{"gallery_id", gallery_id}, {"files", files},
+             {"count", files.size()}}).dump(),
+        "application/json");
+  });
+
+  svr.Get("/api/host-files", [&](const httplib::Request& req,
+                                 httplib::Response& res) {
+    if (!req.has_param("path")) {
+      res.status = 400;
+      res.set_content(json({{"error", "path required"}}).dump(),
+                      "application/json");
+      return;
+    }
+    std::string rel = req.get_param_value("path");
+    if (!IsSafePath(rel)) {
+      res.status = 400;
+      res.set_content(json({{"error", "path contains traversal"}}).dump(),
+                      "application/json");
+      return;
+    }
+    std::error_code ec;
+    std::string abs = fs::weakly_canonical(fs::absolute(rel, ec)).string();
+    if (ec || !fs::exists(abs) || !fs::is_regular_file(abs)) {
+      res.status = 404;
+      res.set_content(json({{"error", "file not found"}}).dump(),
+                      "application/json");
+      return;
+    }
+    std::string data = ReadFile(abs);
+    res.set_content(data, "image/jpeg");
+  });
+
+  svr.Delete("/api/compare/host-file", [&](const httplib::Request& req,
+                                           httplib::Response& res) {
+    if (!req.has_param("path")) {
+      res.status = 400;
+      res.set_content(json({{"error", "path required"}}).dump(),
+                      "application/json");
+      return;
+    }
+    std::string path = req.get_param_value("path");
+    if (!IsSafePath(path)) {
+      res.status = 400;
+      res.set_content(json({{"error", "path contains traversal"}}).dump(),
+                      "application/json");
+      return;
+    }
+    std::error_code ec;
+    std::string abs = fs::weakly_canonical(fs::absolute(path, ec)).string();
+    if (ec || !fs::exists(abs)) {
+      res.status = 404;
+      res.set_content(json({{"error", "file not found"}}).dump(),
+                      "application/json");
+      return;
+    }
+
+    std::lock_guard<std::mutex> lock(cstore.Mutex());
+    const char* vals[] = {abs.c_str()};
+    PGresult* r = PQexecParams(
+        cstore.conn_,
+        "DELETE FROM compare_images WHERE stored_name=$1;",
+        1, nullptr, vals, nullptr, nullptr, 0);
+    if (!r || PQresultStatus(r) != PGRES_COMMAND_OK) {
+      std::string err = r ? PQresultErrorMessage(r) : "db error";
+      PQclear(r);
+      res.status = 500;
+      res.set_content(json({{"error", err}}).dump(), "application/json");
+      return;
+    }
+    PQclear(r);
+
+    std::error_code fec;
+    fs::remove(abs, fec);
+    res.set_content(
+        json({{"status", "deleted"}, {"fs_error", fec ? fec.message() : ""}})
+            .dump(),
+        "application/json");
+  });
 
   svr.Post("/api/compare/compare", [&](const httplib::Request& req,
                                        httplib::Response& res) {

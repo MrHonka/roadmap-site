@@ -13,6 +13,8 @@ services:
     volumes:
       # JSON-хранилище живет на хосте, переживает пересборку образа.
       - ./data:/app/data
+      # Медиа-директория хоста для image compare (сканирование/удаление).
+      - /mnt/win-data/Media/Pics:/mnt/win-data/Media/Pics
     restart: unless-stopped
     depends_on:
       db:

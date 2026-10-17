@@ -95,17 +95,14 @@
 </div>
 
 <div class="topcontrols" style="border-top:1px solid var(--line)">
-  <input type="text" id="newGalleryName" placeholder="Имя новой галереи" style="flex:1;min-width:160px">
-  <button id="createGallery">Создать</button>
-  <label>Загрузить в:
-    <select id="uploadGallery"></select>
+  <label>Папка A (на хосте):
+    <input type="text" id="scanPathA" placeholder="/mnt/win-data/Media/Pics" style="flex:1;min-width:200px">
   </label>
-  <label>Папка:
-    <input type="file" id="folderInput" webkitdirectory directory multiple accept="image/*">
+  <label>Папка B (опционально):
+    <input type="text" id="scanPathB" placeholder="— внутри A —" style="flex:1;min-width:200px">
   </label>
-  <button id="uploadBtn" disabled>Загрузить</button>
-  <button id="refreshGalleries" class="ghost">Обновить</button>
-  <span class="status" id="uploadStatus"></span>
+  <button id="scanBtn">Сканировать</button>
+  <span class="status" id="scanStatus"></span>
 </div>
 
 <div class="main">
@@ -153,10 +150,8 @@
   const elStatus = document.getElementById('status');
   const elGalleryA = document.getElementById('galleryA');
   const elGalleryB = document.getElementById('galleryB');
-  const elUploadGallery = document.getElementById('uploadGallery');
   const elPairList = document.getElementById('pairList');
   const elCompareStatus = document.getElementById('compareStatus');
-  const elUploadStatus = document.getElementById('uploadStatus');
 
   const imgA = document.getElementById('imgA');
   const imgB = document.getElementById('imgB');
@@ -210,49 +205,43 @@
 
   function renderGallerySelects() {
     const opts = galleries.map(g => `<option value="${g.id}">${esc(g.name)} (id ${g.id})</option>`).join('');
-    elUploadGallery.innerHTML = opts;
     elGalleryA.innerHTML = opts;
     elGalleryB.innerHTML = '<option value="">— внутри A —</option>' + opts;
   }
 
-  document.getElementById('createGallery').addEventListener('click', async () => {
-    const name = document.getElementById('newGalleryName').value.trim();
-    if (!name) { alert('Введите имя'); return; }
+  // scan host directories
+  const elScanStatus = document.getElementById('scanStatus');
+  const elScanPathA = document.getElementById('scanPathA');
+  const elScanPathB = document.getElementById('scanPathB');
+  document.getElementById('scanBtn').addEventListener('click', async () => {
+    const pathA = elScanPathA.value.trim();
+    if (!pathA) { alert('Укажите путь до папки A'); return; }
+    const pathB = elScanPathB.value.trim();
+    elScanStatus.textContent = 'Сканирование…';
+    elScanStatus.className = 'status';
     try {
-      await api('/api/compare/galleries', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) });
-      document.getElementById('newGalleryName').value = '';
+      const d = await api('/api/compare/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: pathA })
+      });
+      elScanStatus.textContent = `A: найдено ${d.count} файлов`;
+      if (pathB) {
+        const d2 = await api('/api/compare/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: pathB })
+        });
+        elScanStatus.textContent += `, B: найдено ${d2.count} файлов`;
+      }
       await loadGalleries();
-    } catch (e) { alert(e.message); }
-  });
-  document.getElementById('refreshGalleries').addEventListener('click', loadGalleries);
-
-  // upload
-  const folderInput = document.getElementById('folderInput');
-  const uploadBtn = document.getElementById('uploadBtn');
-  function collectFiles(fileList) {
-    pendingFiles = [];
-    for (const f of fileList) if (/\.(png|jpe?g|bmp|gif|tga)$/i.test(f.name)) pendingFiles.push(f);
-    uploadBtn.disabled = pendingFiles.length === 0;
-    elUploadStatus.textContent = 'Выбрано файлов: ' + pendingFiles.length;
-  }
-  folderInput.addEventListener('change', e => collectFiles(e.target.files));
-  uploadBtn.addEventListener('click', async () => {
-    if (!pendingFiles.length) return;
-    const gid = elUploadGallery.value;
-    if (!gid) { alert('Создайте галерею'); return; }
-    uploadBtn.disabled = true;
-    elUploadStatus.textContent = 'Загрузка…';
-    const fd = new FormData();
-    for (const f of pendingFiles) fd.append('files', f, f.name);
-    try {
-      const r = await fetch('/api/compare/upload?gallery_id=' + encodeURIComponent(gid), { method:'POST', body: fd });
-      const text = await r.text();
-      const data = text ? JSON.parse(text) : null;
-      if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
-      elUploadStatus.textContent = 'Загружено: ' + (data.uploaded||[]).length + ' из ' + pendingFiles.length;
-      pendingFiles = []; folderInput.value = '';
-    } catch (e) { elUploadStatus.textContent = 'Ошибка: ' + e.message; elUploadStatus.className = 'status err'; }
-    finally { uploadBtn.disabled = pendingFiles.length === 0; }
+      elGalleryA.value = d.gallery_id;
+      if (pathB) elGalleryB.value = d2.gallery_id;
+      document.getElementById('compareBtn').click();
+    } catch (e) {
+      elScanStatus.textContent = 'Ошибка: ' + e.message;
+      elScanStatus.className = 'status err';
+    }
   });
 
   // compare
@@ -324,12 +313,16 @@
     renderPairList();
   }
 
-  async function deleteImage(id) {
+  async function deleteImage(id, sourcePath) {
     try {
-      await api('/api/compare/images/' + id, { method:'DELETE' });
-      // remove from pairs
+      if (sourcePath) {
+        await api('/api/compare/host-file?path=' + encodeURIComponent(sourcePath), {
+          method: 'DELETE'
+        });
+      } else {
+        await api('/api/compare/images/' + id, { method:'DELETE' });
+      }
       pairs = pairs.filter(p => p.image_a.id !== id && p.image_b.id !== id);
-      // if deleted image was in active pair, clear
       if (activeIndex >= pairs.length) activeIndex = pairs.length ? pairs.length-1 : -1;
       renderPairList();
       if (activeIndex >= 0) selectPair(activeIndex); else clearPreview();
@@ -338,14 +331,13 @@
     } catch (e) { alert(e.message); }
   }
 
-  delA.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_a.id); });
-  delB.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_b.id); });
+  delA.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_a.id, pairs[activeIndex].image_a.source_path); });
+  delB.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_b.id, pairs[activeIndex].image_b.source_path); });
   delBoth.addEventListener('click', async () => {
     if (activeIndex<0) return;
     const p = pairs[activeIndex];
-    await deleteImage(p.image_a.id);
-    // re-find? p may be removed; delete second by id (still have id)
-    await deleteImage(p.image_b.id);
+    await deleteImage(p.image_a.id, p.image_a.source_path);
+    await deleteImage(p.image_b.id, p.image_b.source_path);
   });
 
   // download collection A as zip
