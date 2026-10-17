@@ -229,8 +229,9 @@
         body: JSON.stringify({ path: fullA })
       });
       elScanStatus.textContent = `A: найдено ${d.count} файлов`;
+      let d2 = null;
       if (pathB) {
-        const d2 = await api('/api/compare/scan', {
+        d2 = await api('/api/compare/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: fullB })
