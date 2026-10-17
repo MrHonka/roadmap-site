@@ -27,8 +27,9 @@ COPY web/ /app/web/
 COPY data/ /app/data/
 
 ENV PORT=8080 \
-    WEB_ROOT=/app/web \
-    DATABASE_URL="postgresql://roadmap:roadmap_pw_change_me@db:5432/roadmap?connect_timeout=5"
+     WEB_ROOT=/app/web \
+     MEDIA_ROOT=/mnt/win-data/Media/Pics \
+     DATABASE_URL="postgresql://roadmap:roadmap_pw_change_me@db:5432/roadmap?connect_timeout=5"
 
 EXPOSE 8080
 

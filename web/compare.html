@@ -213,24 +213,27 @@
   const elScanStatus = document.getElementById('scanStatus');
   const elScanPathA = document.getElementById('scanPathA');
   const elScanPathB = document.getElementById('scanPathB');
+  const MEDIA_ROOT = window.__MEDIA_ROOT__ || '/mnt/win-data/Media/Pics';
   document.getElementById('scanBtn').addEventListener('click', async () => {
     const pathA = elScanPathA.value.trim();
     if (!pathA) { alert('Укажите путь до папки A'); return; }
+    const fullA = pathA.startsWith('/') ? MEDIA_ROOT + pathA : MEDIA_ROOT + '/' + pathA;
     const pathB = elScanPathB.value.trim();
+    const fullB = pathB ? (pathB.startsWith('/') ? MEDIA_ROOT + pathB : MEDIA_ROOT + '/' + pathB) : '';
     elScanStatus.textContent = 'Сканирование…';
     elScanStatus.className = 'status';
     try {
       const d = await api('/api/compare/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: pathA })
+        body: JSON.stringify({ path: fullA })
       });
       elScanStatus.textContent = `A: найдено ${d.count} файлов`;
       if (pathB) {
         const d2 = await api('/api/compare/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: pathB })
+          body: JSON.stringify({ path: fullB })
         });
         elScanStatus.textContent += `, B: найдено ${d2.count} файлов`;
       }

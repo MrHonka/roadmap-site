@@ -333,10 +333,16 @@ class Store {
   std::mutex mutex_;
 };
 
-// Reject absolute paths and traversal sequences to prevent path traversal.
+// Reject traversal sequences and paths outside the allowed media root.
 static bool IsSafePath(const std::string& p) {
   if (p.empty() || p.find("..") != std::string::npos) return false;
-  if (p[0] == '/' || (p.size() > 1 && p[1] == ':')) return false;
+  // Resolve to absolute and check prefix.
+  std::error_code ec;
+  std::string abs = fs::weakly_canonical(fs::absolute(p, ec)).string();
+  if (ec) return false;
+  static const std::string kRoot = "/mnt/win-data/Media/Pics";
+  // On case-insensitive filesystems normalize backslashes.
+  if (abs.compare(0, kRoot.size(), kRoot) != 0) return false;
   return true;
 }
 
@@ -1091,13 +1097,13 @@ int main() {
     }
     if (!IsSafePath(path)) {
       res.status = 400;
-      res.set_content(json({{"error", "path contains traversal"}}).dump(),
+      res.set_content(json({{"error", "path outside /mnt/win-data/Media/Pics"}}).dump(),
                       "application/json");
       return;
     }
     // Resolve to absolute path for scanning.
     std::error_code ec;
-    std::string abs_path = fs::absolute(path, ec).string();
+    std::string abs_path = fs::weakly_canonical(fs::absolute(path, ec)).string();
     if (ec) {
       res.status = 400;
       res.set_content(json({{"error", "invalid path: " + ec.message()}}).dump(),
@@ -1255,6 +1261,7 @@ int main() {
                 "application/json");
           });
 
+  const std::string media_root = EnvOr("MEDIA_ROOT", "/mnt/win-data/Media/Pics");
   svr.Get("/compare", [&](const httplib::Request&, httplib::Response& res) {
     const std::string body = ReadFile(web_root + "/compare.html");
     if (body.empty()) {
@@ -1263,7 +1270,13 @@ int main() {
                       "text/plain; charset=utf-8");
       return;
     }
-    res.set_content(body, "text/html; charset=utf-8");
+    // Inject MEDIA_ROOT as a global JS variable before </head>.
+    const std::string inject =
+        "<script>window.__MEDIA_ROOT__ = " + json(media_root).dump() + ";</script>\n";
+    std::string patched = body;
+    size_t pos = patched.find("</head>");
+    if (pos != std::string::npos) patched.insert(pos, inject);
+    res.set_content(patched, "text/html; charset=utf-8");
   });
 
   svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
