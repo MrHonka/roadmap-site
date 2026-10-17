@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image Compare — roadmap-site</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root { --bg:#0f141b; --card:#182030; --line:#26324a; --txt:#e8eef7; --mut:#93a1b8;
+          --acc:#4cc38a; --acc2:#6aa8ff; --warn:#ffb454; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+         background:var(--bg); color:var(--txt); height:100vh; display:flex; flex-direction:column; }
+  header { background:rgba(15,20,27,.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); flex:0 0 auto; }
+  .wrap { max-width:1200px; margin:0 auto; padding:12px 16px; }
+  h1 { font-size:18px; margin:4px 0 2px; }
+  .sub { color:var(--mut); font-size:12px; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+  button { background:var(--acc); color:#06281a; border:0; border-radius:8px;
+           padding:7px 12px; font-weight:700; cursor:pointer; font-size:13px; }
+  button.ghost { background:transparent; color:var(--txt); border:1px solid var(--line); }
+  button.danger { background:#ff7a7a; color:#2a0606; }
+  button:disabled { opacity:.55; cursor:wait; }
+  .status { font-size:12px; color:var(--mut); }
+  .status.ok { color:var(--acc); } .status.err { color:#ff7a7a; }
+  label { font-size:12px; color:var(--mut); }
+  select, input[type=number], input[type=text] {
+    background:#0b1017; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:5px 7px; font:inherit; font-size:12px; }
+  code { background:#0b1017; padding:1px 5px; border-radius:4px; border:1px solid var(--line); }
+
+  /* main area */
+  .main { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; }
+  .preview { flex:1 1 auto; display:flex; gap:12px; padding:12px 16px; min-height:0; align-items:stretch; }
+  .preview .pane { flex:1 1 0; background:var(--card); border:1px solid var(--line); border-radius:12px;
+                   display:flex; flex-direction:column; overflow:hidden; }
+  .preview .pane .imgwrap { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+                            background:#05080d; min-height:0; }
+  .preview .pane img { max-width:100%; max-height:100%; object-fit:contain; }
+  .preview .pane .meta { padding:8px 10px; font-size:12px; color:var(--mut); border-top:1px solid var(--line); }
+  .preview .pane .meta .title { color:var(--txt); font-weight:600; font-size:13px; }
+  .preview .pane .meta .quality { color:var(--acc); font-weight:700; }
+  .preview .actions { display:flex; gap:6px; padding:8px 10px; border-top:1px solid var(--line); flex-wrap:wrap; }
+  .preview .center { display:flex; flex-direction:column; align-items:center; justify-content:center;
+                     padding:8px; gap:6px; min-width:120px; }
+  .sim-badge { font-size:20px; font-weight:800; }
+  .sim-badge.high { color:var(--acc); } .sim-badge.med { color:var(--warn); } .sim-badge.low { color:#ff7a7a; }
+
+  /* bottom list */
+  .listbar { flex:0 0 25%; border-top:2px solid var(--line); display:flex; flex-direction:column; min-height:120px; }
+  .listbar .toolbar { padding:8px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .listbar .scroll { flex:1 1 auto; overflow-y:auto; padding:6px 16px; }
+  .pair-item { padding:6px 8px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px;
+               cursor:pointer; font-size:12px; display:flex; justify-content:space-between; gap:8px; }
+  .pair-item:hover { background:rgba(255,255,255,.04); }
+  .pair-item.active { border-color:var(--acc); background:rgba(76,195,138,.08); }
+  .pair-item .left { color:var(--txt); }
+  .pair-item .right { color:var(--mut); white-space:nowrap; }
+  .empty { color:var(--mut); font-size:12px; padding:10px; }
+
+  /* top controls */
+  .topcontrols { padding:8px 16px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div>
+        <h1>Image Compare</h1>
+        <div class="sub">Поиск похожих изображений (перцептивный хэш) · <code>/api/compare/*</code></div>
+      </div>
+      <div class="row" style="margin:0">
+        <a href="/" style="color:var(--acc2);text-decoration:none;font-size:12px">← Roadmap</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="topcontrols">
+  <label>Галерея A:
+    <select id="galleryA"></select>
+  </label>
+  <label>Галерея B (иначе внутри A):
+    <select id="galleryB"><option value="">— внутри A —</option></select>
+  </label>
+  <label>Порог %:
+    <input type="number" id="threshold" value="50" min="0" max="100" style="width:60px">
+  </label>
+  <button id="compareBtn">Сравнить</button>
+  <button id="downloadBtn" class="ghost">Скачать коллекцию A</button>
+  <span class="status" id="status">Готово</span>
+</div>
+
+<div class="topcontrols" style="border-top:1px solid var(--line)">
+  <input type="text" id="newGalleryName" placeholder="Имя новой галереи" style="flex:1;min-width:160px">
+  <button id="createGallery">Создать</button>
+  <label>Загрузить в:
+    <select id="uploadGallery"></select>
+  </label>
+  <label>Папка:
+    <input type="file" id="folderInput" webkitdirectory directory multiple accept="image/*">
+  </label>
+  <button id="uploadBtn" disabled>Загрузить</button>
+  <button id="refreshGalleries" class="ghost">Обновить</button>
+  <span class="status" id="uploadStatus"></span>
+</div>
+
+<div class="main">
+  <div class="preview" id="preview">
+    <div class="pane">
+      <div class="imgwrap"><img id="imgA" src="" alt=""></div>
+      <div class="meta">
+        <div class="title" id="titleA">—</div>
+        <div id="metaA"></div>
+        <div class="quality" id="qualA"></div>
+      </div>
+      <div class="actions">
+        <button class="danger" id="delA" disabled>Удалить A</button>
+      </div>
+    </div>
+    <div class="center">
+      <div class="sim-badge" id="simBadge">—</div>
+      <div style="font-size:11px;color:var(--mut)" id="distInfo"></div>
+      <button class="danger" id="delBoth" disabled>Удалить оба</button>
+    </div>
+    <div class="pane">
+      <div class="imgwrap"><img id="imgB" src="" alt=""></div>
+      <div class="meta">
+        <div class="title" id="titleB">—</div>
+        <div id="metaB"></div>
+        <div class="quality" id="qualB"></div>
+      </div>
+      <div class="actions">
+        <button class="danger" id="delB" disabled>Удалить B</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="listbar">
+    <div class="toolbar">
+      <span style="font-size:12px;color:var(--mut)">Найденные пары:</span>
+      <span class="status" id="compareStatus"></span>
+    </div>
+    <div class="scroll" id="pairList"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const elStatus = document.getElementById('status');
+  const elGalleryA = document.getElementById('galleryA');
+  const elGalleryB = document.getElementById('galleryB');
+  const elUploadGallery = document.getElementById('uploadGallery');
+  const elPairList = document.getElementById('pairList');
+  const elCompareStatus = document.getElementById('compareStatus');
+  const elUploadStatus = document.getElementById('uploadStatus');
+
+  const imgA = document.getElementById('imgA');
+  const imgB = document.getElementById('imgB');
+  const titleA = document.getElementById('titleA');
+  const titleB = document.getElementById('titleB');
+  const metaA = document.getElementById('metaA');
+  const metaB = document.getElementById('metaB');
+  const qualA = document.getElementById('qualA');
+  const qualB = document.getElementById('qualB');
+  const simBadge = document.getElementById('simBadge');
+  const distInfo = document.getElementById('distInfo');
+  const delA = document.getElementById('delA');
+  const delB = document.getElementById('delB');
+  const delBoth = document.getElementById('delBoth');
+
+  let galleries = [];
+  let pairs = [];
+  let activeIndex = -1;
+  let pendingFiles = [];
+
+  function setStatus(msg, cls) {
+    elStatus.textContent = msg;
+    elStatus.className = 'status' + (cls ? ' ' + cls : '');
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  async function api(path, opts) {
+    const r = await fetch(path, opts);
+    const text = await r.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch(e) { data = text; }
+    if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+    return data;
+  }
+
+  function area(img){ return (img.width||0)*(img.height||0); }
+  function betterSide(p) {
+    const a = p.image_a, b = p.image_b;
+    if (area(a) !== area(b)) return area(a) > area(b) ? 'a' : 'b';
+    return (a.size_bytes||0) >= (b.size_bytes||0) ? 'a' : 'b';
+  }
+
+  async function loadGalleries() {
+    try {
+      const d = await api('/api/compare/galleries');
+      galleries = d.galleries || [];
+      renderGallerySelects();
+      setStatus('Галерей: ' + galleries.length, 'ok');
+    } catch (e) { setStatus('Ошибка: ' + e.message, 'err'); }
+  }
+
+  function renderGallerySelects() {
+    const opts = galleries.map(g => `<option value="${g.id}">${esc(g.name)} (id ${g.id})</option>`).join('');
+    elUploadGallery.innerHTML = opts;
+    elGalleryA.innerHTML = opts;
+    elGalleryB.innerHTML = '<option value="">— внутри A —</option>' + opts;
+  }
+
+  document.getElementById('createGallery').addEventListener('click', async () => {
+    const name = document.getElementById('newGalleryName').value.trim();
+    if (!name) { alert('Введите имя'); return; }
+    try {
+      await api('/api/compare/galleries', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name}) });
+      document.getElementById('newGalleryName').value = '';
+      await loadGalleries();
+    } catch (e) { alert(e.message); }
+  });
+  document.getElementById('refreshGalleries').addEventListener('click', loadGalleries);
+
+  // upload
+  const folderInput = document.getElementById('folderInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  function collectFiles(fileList) {
+    pendingFiles = [];
+    for (const f of fileList) if (/\.(png|jpe?g|bmp|gif|tga)$/i.test(f.name)) pendingFiles.push(f);
+    uploadBtn.disabled = pendingFiles.length === 0;
+    elUploadStatus.textContent = 'Выбрано файлов: ' + pendingFiles.length;
+  }
+  folderInput.addEventListener('change', e => collectFiles(e.target.files));
+  uploadBtn.addEventListener('click', async () => {
+    if (!pendingFiles.length) return;
+    const gid = elUploadGallery.value;
+    if (!gid) { alert('Создайте галерею'); return; }
+    uploadBtn.disabled = true;
+    elUploadStatus.textContent = 'Загрузка…';
+    const fd = new FormData();
+    for (const f of pendingFiles) fd.append('files', f, f.name);
+    try {
+      const r = await fetch('/api/compare/upload?gallery_id=' + encodeURIComponent(gid), { method:'POST', body: fd });
+      const text = await r.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+      elUploadStatus.textContent = 'Загружено: ' + (data.uploaded||[]).length + ' из ' + pendingFiles.length;
+      pendingFiles = []; folderInput.value = '';
+    } catch (e) { elUploadStatus.textContent = 'Ошибка: ' + e.message; elUploadStatus.className = 'status err'; }
+    finally { uploadBtn.disabled = pendingFiles.length === 0; }
+  });
+
+  // compare
+  document.getElementById('compareBtn').addEventListener('click', async () => {
+    const a = elGalleryA.value;
+    if (!a) { alert('Выберите галерею A'); return; }
+    const b = elGalleryB.value;
+    const threshold = parseInt(document.getElementById('threshold').value, 10) || 50;
+    elCompareStatus.textContent = 'Сравнение…';
+    pairs = []; activeIndex = -1; renderPairList(); clearPreview();
+    try {
+      const body = { gallery_a_id: parseInt(a,10), threshold };
+      if (b) body.gallery_b_id = parseInt(b,10);
+      const d = await api('/api/compare/compare', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      pairs = d.pairs || [];
+      elCompareStatus.textContent = `Найдено пар: ${pairs.length} (порог ${threshold}%)`;
+      elCompareStatus.className = 'status ok';
+      renderPairList();
+      if (pairs.length) selectPair(0);
+    } catch (e) {
+      elCompareStatus.textContent = 'Ошибка: ' + e.message;
+      elCompareStatus.className = 'status err';
+    }
+  });
+
+  function renderPairList() {
+    elPairList.innerHTML = '';
+    if (!pairs.length) { elPairList.innerHTML = '<div class="empty">Нет пар</div>'; return; }
+    pairs.forEach((p, idx) => {
+      const div = document.createElement('div');
+      div.className = 'pair-item' + (idx === activeIndex ? ' active' : '');
+      div.innerHTML = `
+        <div class="left">${esc(p.image_a.label)} ↔ ${esc(p.image_b.label)}</div>
+        <div class="right">${p.similarity_pct}%</div>`;
+      div.addEventListener('click', () => selectPair(idx));
+      elPairList.appendChild(div);
+    });
+  }
+
+  function clearPreview() {
+    imgA.src = ''; imgB.src = '';
+    titleA.textContent = '—'; titleB.textContent = '—';
+    metaA.textContent = ''; metaB.textContent = '';
+    qualA.textContent = ''; qualB.textContent = '';
+    simBadge.textContent = '—'; simBadge.className = 'sim-badge';
+    distInfo.textContent = '';
+    delA.disabled = delB.disabled = delBoth.disabled = true;
+  }
+
+  function selectPair(idx) {
+    activeIndex = idx;
+    const p = pairs[idx];
+    if (!p) { clearPreview(); renderPairList(); return; }
+    imgA.src = p.image_a.url; imgB.src = p.image_b.url;
+    titleA.textContent = p.image_a.label;
+    titleB.textContent = p.image_b.label;
+    metaA.textContent = `${p.image_a.width}×${p.image_a.height} · ${p.image_a.size_bytes} байт`;
+    metaB.textContent = `${p.image_b.width}×${p.image_b.height} · ${p.image_b.size_bytes} байт`;
+    const better = betterSide(p);
+    qualA.textContent = better === 'a' ? '✔ лучшее качество' : '';
+    qualB.textContent = better === 'b' ? '✔ лучшее качество' : '';
+    const sim = p.similarity_pct;
+    simBadge.textContent = sim + '%';
+    simBadge.className = 'sim-badge ' + (sim >= 85 ? 'high' : (sim >= 60 ? 'med' : 'low'));
+    distInfo.textContent = 'Хэмминг: ' + p.hamming_distance;
+    delA.disabled = false; delB.disabled = false; delBoth.disabled = false;
+    renderPairList();
+  }
+
+  async function deleteImage(id) {
+    try {
+      await api('/api/compare/images/' + id, { method:'DELETE' });
+      // remove from pairs
+      pairs = pairs.filter(p => p.image_a.id !== id && p.image_b.id !== id);
+      // if deleted image was in active pair, clear
+      if (activeIndex >= pairs.length) activeIndex = pairs.length ? pairs.length-1 : -1;
+      renderPairList();
+      if (activeIndex >= 0) selectPair(activeIndex); else clearPreview();
+      elCompareStatus.textContent = 'Удалено. Осталось пар: ' + pairs.length;
+      elCompareStatus.className = 'status ok';
+    } catch (e) { alert(e.message); }
+  }
+
+  delA.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_a.id); });
+  delB.addEventListener('click', () => { if (activeIndex>=0) deleteImage(pairs[activeIndex].image_b.id); });
+  delBoth.addEventListener('click', async () => {
+    if (activeIndex<0) return;
+    const p = pairs[activeIndex];
+    await deleteImage(p.image_a.id);
+    // re-find? p may be removed; delete second by id (still have id)
+    await deleteImage(p.image_b.id);
+  });
+
+  // download collection A as zip
+  document.getElementById('downloadBtn').addEventListener('click', async () => {
+    const gid = elGalleryA.value;
+    if (!gid) { alert('Выберите галерею A'); return; }
+    try {
+      const d = await api('/api/compare/images?gallery_id=' + gid);
+      const imgs = d.images || [];
+      if (!imgs.length) { alert('Галерея пуста'); return; }
+      const zip = new JSZip();
+      for (const img of imgs) {
+        const resp = await fetch(img.url);
+        const blob = await resp.blob();
+        zip.file(img.filename, blob);
+      }
+      const content = await zip.generateAsync({type:'blob'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(content);
+      a.download = 'gallery_' + gid + '.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { alert('Ошибка скачивания: ' + e.message); }
+  });
+
+  loadGalleries();
+})();
+</script>
+</body>
+</html>
