@@ -65,6 +65,11 @@
         <div class="sub">Поиск похожих изображений (перцептивный хэш)</div>
       </div>
       <div class="row">
+        <label>Галерея:
+          <select id="gallerySelect"></select>
+        </label>
+        <button id="deleteGalleryBtn" class="danger">Удалить галерею</button>
+        <span style="width:16px"></span>
         <label>Папка A:
           <input type="text" id="scanPathA" placeholder="/" style="width:200px">
         </label>
@@ -75,7 +80,6 @@
           <input type="number" id="threshold" value="50" min="0" max="100" style="width:60px">
         </label>
         <button id="scanBtn">Сканировать и сравнить</button>
-        <button id="deleteGalleryBtn" class="danger">Удалить галерею A</button>
         <a href="/" style="color:var(--acc2);text-decoration:none;font-size:12px">← Roadmap</a>
         <span class="status" id="scanStatus"></span>
       </div>
@@ -146,9 +150,19 @@
   const delBoth = document.getElementById('delBoth');
 
   const MEDIA_ROOT = window.__MEDIA_ROOT__ || '/mnt/win-data/Media/Pics';
+  const elGallerySelect = document.getElementById('gallerySelect');
 
   let pairs = [];
   let activeIndex = -1;
+
+  async function loadGalleries() {
+    try {
+      const d = await api('/api/compare/galleries');
+      const galleries = d.galleries || [];
+      elGallerySelect.innerHTML = galleries.map(g =>
+        `<option value="${g.id}">${esc(g.name)} (id ${g.id})</option>`).join('');
+    } catch (e) { /* ignore */ }
+  }
 
   function setStatus(msg, cls) {
     elScanStatus.textContent = msg;
@@ -221,10 +235,13 @@
       elCompareStatus.className = 'status ok';
       if (pairs.length) selectPair(0);
       setStatus('Готово', 'ok');
+      await loadGalleries();
     } catch (e) {
       setStatus('Ошибка: ' + e.message, 'err');
     }
   });
+
+  loadGalleries();
 
   function renderPairList() {
     elPairList.innerHTML = '';
@@ -289,12 +306,12 @@
   }
 
   document.getElementById('deleteGalleryBtn').addEventListener('click', async () => {
-    if (!confirm('Удалить галерею A и все её файлы с хоста?')) return;
-    const pathA = elScanPathA.value.trim();
-    if (!pathA) { alert('Укажите путь до папки A'); return; }
-    const fullA = pathA.startsWith('/') ? MEDIA_ROOT + pathA : MEDIA_ROOT + '/' + pathA;
+    const gid = elGallerySelect.value;
+    if (!gid) { alert('Выберите галерею'); return; }
+    if (!confirm('Удалить галерею и все связанные сравнения?')) return;
     try {
-      await api('/api/compare/host-file?path=' + encodeURIComponent(fullA), { method: 'DELETE' });
+      await api('/api/compare/galleries/' + gid, { method: 'DELETE' });
+      await loadGalleries();
       pairs = []; activeIndex = -1; renderPairList(); clearPreview();
       elCompareStatus.textContent = 'Галерея удалена';
       elCompareStatus.className = 'status ok';
